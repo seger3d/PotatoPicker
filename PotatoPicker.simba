@@ -1,0 +1,454 @@
+program new;
+{$DEFINE SMART8}
+{$i srl/srl.simba}
+{$i sps/sps.simba}
+
+Const
+  NumbOfPlayers= 1;
+  StartPlayer=   0;
+  Version=       '1.00';
+
+Var
+  Potatoes,TotalTime:Integer;
+  aFound: Extended;
+
+procedure DeclarePlayers;
+begin
+  NumberOfPlayers(NumbOfPlayers);
+  CurrentPlayer := StartPlayer;
+
+  with Players[0] do
+  begin
+    Name        := '';
+    Pass        := '';
+    Nick        := '';
+    Active      := True;
+    Players[0].Integers[0] := 190; //Price of Raw Potatoes
+
+  end;
+end;
+
+procedure Report;
+Var PPH,Profit,ProfitPH: Integer;
+begin
+
+  PPH := Round((Potatoes * 3600) / (GetTimeRunning / 1000));
+  Profit := Potatoes * Players[0].Integers[0];
+  ProfitPH := Round((Profit * 3600) / (GetTimeRunning / 1000));
+
+  ClearDebug;
+  WriteLn('==========================================');
+  WriteLn('Time running: ' + TimeRunning);
+  WriteLn('Potatoes Picked: ' + IntToStr(Potatoes));
+  WriteLn('Potatoes Per Hour: ' + IntToStr(PPH));
+  WriteLn('Profit: ' + IntToStr(Profit));
+  WriteLn('Profit Per Hour: ' + IntToStr(ProfitPH));
+  WriteLn('==========================================');
+
+end;
+
+ {*******************************************************************************
+
+All of these mouse movements are credited to Benland100 and flight
+
+*******************************************************************************}
+
+
+//By Benland100, modified to shift mouse speeds after every step
+Procedure SuperWindMouse(xs, ys, xe, ye, gravity, wind, minWait, maxWait, maxStep, targetArea: extended);
+Var
+  veloX,veloY,windX,windY,veloMag,dist,randomDist,lastDist,step: extended;
+  lastX,lastY,MSP,W: integer;
+  sqrt2,sqrt3,sqrt5: extended;
+Begin
+  MSP  := MouseSpeed;
+  sqrt2:= sqrt(2);
+  sqrt3:= sqrt(3);
+  sqrt5:= sqrt(5);
+  While hypot(xs - xe, ys - ye) > 1 Do
+  Begin
+    dist:= hypot(xs - xe, ys - ye);
+    wind:= minE(wind, dist);
+    If dist >= targetArea Then
+    Begin
+      windX:= windX / sqrt3 + (random(round(wind) * 2 + 1) - wind) / sqrt5;
+      windY:= windY / sqrt3 + (random(round(wind) * 2 + 1) - wind) / sqrt5;
+    End
+    Else
+    Begin
+      windX:= windX / sqrt2;
+      windY:= windY / sqrt2;
+      If (maxStep < 3) Then
+      Begin
+        maxStep:= random(3) + 3.0;
+      End
+      Else
+      Begin
+        maxStep:= maxStep / sqrt5;
+      End;
+    End;
+    veloX:= veloX + windX;
+    veloY:= veloY + windY;
+    veloX:= veloX + gravity * (xe - xs) / dist;
+    veloY:= veloY + gravity * (ye - ys) / dist;
+    if hypot(veloX, veloY) > maxStep then
+    Begin
+      randomDist:= maxStep / 2.0 + random(round(maxStep) div 2);
+      veloMag:= sqrt(veloX * veloX + veloY * veloY);
+      veloX:= (veloX / veloMag) * randomDist;
+      veloY:= (veloY / veloMag) * randomDist;
+    End;
+    lastX:= Round(xs);
+    lastY:= Round(ys);
+    xs:= xs + veloX;
+    ys:= ys + veloY;
+
+    Case Random(50) Of
+      1..25: W := (MSP + (Random((MSP/4))));
+      26..50: W := (MSP - (RandomRange((MSP/2), MSP-1)));
+    End;
+    If (W < 1) Then
+    W := 1;
+
+    If (lastX <> Round(xs)) Or (lastY <> Round(ys)) Then
+    MoveMouse(Round(xs), Round(ys));
+
+    step:= hypot(xs - lastX, ys - lastY);
+    //W := round((maxWait - minWait) * (step / maxStep) + minWait);
+    wait(W);
+    lastdist:= dist;
+  end;
+
+  If (Round(xe) <> Round(xs)) or (Round(ye) <> Round(ys)) Then
+  MoveMouse(Round(xe), Round(ye));
+
+  MouseSpeed := MSP;
+End;
+
+Procedure HumanMMouse(eX, eY, ranX, ranY: Integer);
+Var
+  randSpeed: extended;
+  X,Y,X2,Y2,j,Dist,MP: integer;
+Begin
+  j := MouseSpeed;
+  GetMousePos(X, Y);
+  Dist := Distance(X, Y, eX, eY);
+  MP := Round(Dist/150);
+  If MP < 0 Then
+  MP := 1;
+
+  randSpeed := (random(MouseSpeed) / 2.0 + MouseSpeed) / 10.0;
+  X2 := RandomRange(eX-(j*MP), eX+(j*MP));
+  Y2 := RandomRange(eY-(j*MP), eY+(j*MP));
+  SuperWindMouse(X, Y, X2, Y2, 11, 8, 10.0 / randSpeed, 12.0 / randSpeed, 10.0 * randSpeed, 10.0 * randSpeed);
+  GetMousePos(X, Y);
+  MMouse(eX, eY, ranX, ranY);
+  MouseSpeed := j;
+End;
+
+Procedure HumanMouseBox(X1, Y1, X2, Y2: Integer);
+Var
+  FX, FY: Integer;
+Begin
+  GaussBox(FX,FY,X1,Y1,X2,Y2);
+  HumanMMouse(FX,FY,0,0)
+End;
+
+
+procedure CheckUp;
+begin
+  if not LoggedIn then
+  begin
+    SixHourFix;
+    ClickNorth(SRL_ANGLE_HIGH);
+    SetAngle(SRL_ANGLE_HIGH);
+  end;
+end;
+
+Function FindPotato: Boolean;
+Var
+  CTS, i, X, Y,A: Integer;
+  TPA: TPointArray;
+  ATPA: Array of TPointArray;
+
+Begin
+  Result := False;
+  CheckUp;
+  CTS := GetColorToleranceSpeed;
+  ColorToleranceSpeed(2);
+  SetToleranceSpeed2Modifiers(0.08, 0.11);
+  FindColorsSpiralTolerance(MSCX, MSCY, TPA, 4421473, MSX1, MSY1, MSX2, MSY2, 10);
+  ColorToleranceSpeed(CTS);
+  ATPA := TPAToATPAEx(TPA,  10, 10);
+
+  if High(ATPA) > 0 then
+  Begin
+    MiddleTPAEx(ATPA[i], X, Y);
+    HumanMMouse(x, y, 0, 0);
+    If(WaitUpTextMulti(['Pi','ick','Pot','tato'],1000)) Then
+    Begin
+      A := randomRange(0,100);
+      WriteLn(A);
+      Case A of
+        0..90: //
+        begin
+          ClickMouse2(mouse_left);
+          Result := true;
+        end;
+        90..100: //
+        begin
+          ClickMouse2(mouse_right);
+          if WaitOption('ick',500) then
+          Result := True;
+        end;
+      end;
+    End;
+  End;
+End;
+
+Function OpenGate: Boolean;
+Var
+  CTS, i, X, Y, H: Integer;
+  TPA: TPointArray;
+  ATPA: Array of TPointArray;
+
+Begin
+  Result := False;
+  FFlag(0);
+  Wait(randomRange(1000,1400));
+  CheckUp;
+  CTS := GetColorToleranceSpeed;
+  ColorToleranceSpeed(2);
+  SetToleranceSpeed2Modifiers(0.10, 0.55);
+  FindColorsSpiralTolerance(MSCX, MSCY, TPA, 3687502, MSX1, MSY1, MSX2, MSY2, 10);
+  ColorToleranceSpeed(CTS);
+  ATPA := TPAToATPAEx(TPA,  10, 10);
+  if High(ATPA) > 10 then
+  H := 10
+  else
+  H := High(ATPA);
+  For I := 0 To H Do
+  Begin
+    MiddleTPAEx(ATPA[i], X, Y);
+    HumanMMouse(x, y, 0, 0);
+    If(WaitUpTextMulti(['Ope', 'pen'],randomrange(250,350))) Then
+    Begin
+      Wait(randomrange(1000,1200));
+      ClickMouse2(mouse_right);
+      if WaitOption('Open',1000) then
+      if DidRedClick then
+      begin
+        Wait(randomrange(1800,2000));
+        Result := True;
+        Exit;
+      end;
+    End;
+    if (WaitUpTextMulti(['Clos','ose'], randomrange(75,100))) then
+    Begin
+      Result := True
+      Exit;
+    End;
+  End;
+End;
+
+function PickPotato: Boolean;
+var Time,X,Y,IC,CC:integer;
+begin
+  repeat
+    IC := InvCount;
+    if  FindPotato then
+    MarkTime(Time);
+    repeat
+      Wait(randomrange(50,100));
+      CC := InvCount;
+    Until((InvCount > IC) or (CC > IC) or (TimeFromMark(Time) > randomrange(5000,6000)))
+    if InvCount > IC then
+    Potatoes := Potatoes + 1;
+    if InvCount = 0 then
+    begin
+      if ((TimeFromMark(Time) > 10000) and (FindBlackChatMessage('each that'))) then
+      Exit;
+    end;
+  Until(InvFull)
+  MakeCompass(0);
+end;
+
+
+function WalkTo(Where:String):boolean;
+var
+  X,Y,fieldDTM: Integer;
+  toBank,toField,toInField,toFieldPath,toBankPath,toGatePath:TPointArray;
+
+begin
+  //PotatoPickerSPSWorldMap
+  toFieldPath:=[Point(111,305),Point(111,297),Point(117,293),Point(124,291),Point(132,287),Point(140,286),Point(148,284),Point(156,281),Point(164,278),Point(171,277),Point(182,272),Point(190,266),Point(197,263),Point(205,257),Point(211,252),Point(217,245),Point(223,240),Point(231,235),Point(240,232),Point(248,228),Point(257,229),Point(267,227),Point(274,221),Point(278,211),Point(278,200),Point(281,190),Point(282,180),Point(283,170),Point(284,157),Point(284,146),Point(284,135),Point(288,125),Point(295,117),Point(304,112),Point(316,111),Point(323,114),Point(323,120)];
+  toBankPath:=[Point(330,193),Point(329,180),Point(328,172),Point(326,162),Point(327,150),Point(325,141),Point(323,129),Point(323,120),Point(323,114),Point(316,111),Point(304,112),Point(295,117),Point(288,125),Point(284,135),Point(284,146),Point(284,157),Point(283,170),Point(282,180),Point(281,190),Point(278,200),Point(278,211),Point(274,221),Point(267,227),Point(257,229),Point(248,228),Point(240,232),Point(231,235),Point(223,240),Point(217,245),Point(211,252),Point(205,257),Point(197,263),Point(190,266),Point(182,272),Point(171,277),Point(164,278),Point(156,281),Point(148,284),Point(140,286),Point(132,287),Point(124,291),Point(117,293),Point(111,297),Point(111,305)];
+  toGatePath:=[Point(346,200),Point(340,192),Point(337,183),Point(332,172),Point(330,162),Point(329,150),Point(326,139),Point(325,129),Point(325,121)];
+
+  fieldDTM := DTMFromString('mbQAAAHicY2VgYChjYmAoBeJIIO4G4gQgngQUnwrEc4C4A4jbgNjOVonhFRsjw/O3zxmCQn3BWA4ojo4ZsWAwAAAjGQvc');
+
+  SPS_Setup(RUNESCAPE_OTHER,['PotatoPickerSPSWorldMap']);
+  Case LowerCase(Where) of
+
+    'bank': //
+    begin
+      SetAngle(0);
+      SetRun(True);
+      CheckUp;
+      SPS_WalkPath(toBankPath);
+      Result := True;
+    end;
+    'field': //
+    begin
+      CheckUp;
+      SetAngle(0);
+      SetRun(True);
+      SPS_WalkPath(toFieldPath);
+      FFlag(0);
+      Wait(randomRange(500,600));
+      if (FindDTMRotated(fieldDTM, x, y, MMX1, MMY1, MMX2, MMY2, 0, 359, 1, aFound))then
+      begin
+        HumanMMouse(x,y,0,0);
+        ClickMouse2(mouse_left);
+        FFlag(0);
+        Result := True;
+      end;
+      FFlag(0);
+      Result := True;
+    end;
+
+    'gate': //
+    begin
+      SetAngle(0);
+      SetRun(True);
+      CheckUp;
+      SPS_WalkPath(toGatePath);
+      FFlag(0);
+      if (FindDTMRotated(fieldDTM, x, y, MMX1, MMY1, MMX2, MMY2, 0, 359, 1, aFound))then
+      begin
+        HumanMMouse(x,y,0,0);
+        ClickMouse2(mouse_left);
+        FFlag(0);
+        Result := True;
+      end;
+      Result := True;
+    end;
+  end;
+  FreeDTM(FieldDTM);
+end;
+
+
+
+Function OpenCounter: Boolean;
+Var
+  CTS, i, X, Y, T: Integer;
+  TPA: TPointArray;
+  ATPA: Array of TPointArray;
+
+Begin
+  Result := False;
+  CheckUp;
+  CTS := GetColorToleranceSpeed;
+  ColorToleranceSpeed(2);
+  SetToleranceSpeed2Modifiers(0.73, 0.49);
+  FindColorsSpiralTolerance(MSCX, MSCY, TPA, 5136741, MSX1, MSY1, MSX2, MSY2, 5);
+  ColorToleranceSpeed(CTS);
+  ATPA := TPAToATPAEx(TPA,  10, 10);
+
+  For I := 0 To High(ATPA) Do
+  Begin
+    MiddleTPAEx(ATPA[i], X, Y);
+    HumanMMouse(x, y, 0, 0);
+    If(WaitUpTextMulti(['Coun', 'ounter' ],500) and not WaitUpTextMulti(['aurd'],500)) Then
+    Begin
+      ClickMouse2(mouse_right);
+      if WaitOption('Bank',500) then
+      MarkTime(T);
+      repeat
+        Wait(50)
+      Until((BankScreen = True) or (TimefromMark(T) > 1000))
+      Result := True;
+      Break;
+    end;
+  end;
+End;
+
+
+
+function Bank: boolean;
+var
+  tries:integer;
+begin
+  if (InvCount = 0) then
+  begin
+    Result := true;
+    Exit;
+  end;
+  CheckUp;
+  tries := 0;
+  Repeat
+    if Not BankScreen then
+      OpenCounter;
+    DepositAll;
+    Wait(randomrange(200,300));
+    tries := tries + 1;
+  Until((InvCount = 0) or (tries > 5))
+  CloseBank;
+  Report;
+  Result := true;
+end;
+procedure Potato;
+var c,time:integer;
+begin
+  MarkTime(time);
+  repeat
+    C := InvCount;
+    PickPotato;
+    if InvCount > C then
+    Potatoes := Potatoes + 1;
+    if InvCount = 0 then
+    begin
+      if ((TimeFromMark(Time) > 10000) and (FindBlackChatMessage('each that'))) then
+      begin
+        Exit;
+      end;
+    end;
+  Until(InvFull)
+  MakeCompass(0);
+end;
+
+Procedure MasterLoop;
+var
+  C:Integer;
+begin
+  if not LoggedIn then Exit;
+  WalkTo('field');
+  OpenGate;
+  Potato;
+  WalkTo('gate');
+  OpenGate;
+  WalkTo('bank');
+  Bank;
+  Report;
+end;
+
+begin
+  {$IFDEF SMART}
+    SRL_SixHourFix := True;
+    Smart_FixSpeed := True;
+  {$ENDIF}
+  ClearDebug;
+  SetUpSrl;
+  ActivateClient;
+  DeclarePlayers;
+  LoginPlayer;
+  SetAngle(0);
+  SetRun(True);
+  MouseSpeed := RandomRange(25, 33);
+  MarkTime(TotalTime);
+  repeat
+    CheckUp;
+    MasterLoop;
+  Until(False)
+end.
+
